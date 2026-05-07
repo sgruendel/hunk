@@ -58,6 +58,17 @@ function stripTerminalControl(text: string) {
     .replace(/\x1b[@-_]/g, "");
 }
 
+/**
+ * Normalize Git's no-index `1/` and `2/` file prefixes into standard `a/` and `b/` headers.
+ * Pierre's patch parser expects Git-style diff headers and otherwise fails to recover file names.
+ */
+function normalizeGitNoIndexPrefixes(text: string) {
+  return text
+    .replace(/^diff --git 1\/(.+) 2\/(.+)$/gm, "diff --git a/$1 b/$2")
+    .replace(/^--- 1\/(.+)$/gm, "--- a/$1")
+    .replace(/^\+\+\+ 2\/(.+)$/gm, "+++ b/$1");
+}
+
 /** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */
 function splitPatchIntoFileChunks(rawPatch: string) {
   const patch = rawPatch.replaceAll("\r\n", "\n");
@@ -302,7 +313,9 @@ function normalizePatchChangeset(
   sourceLabel: string,
   agentContext: AgentContext | null,
 ): Changeset {
-  const normalizedPatchText = stripTerminalControl(patchText.replaceAll("\r\n", "\n"));
+  const normalizedPatchText = normalizeGitNoIndexPrefixes(
+    stripTerminalControl(patchText.replaceAll("\r\n", "\n")),
+  );
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
   try {
