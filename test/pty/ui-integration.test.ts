@@ -122,6 +122,87 @@ describe("live UI integration", () => {
     }
   });
 
+  test("backward cross-file hunk navigation reveals the target hunk in a real PTY", async () => {
+    const fixture = harness.createCrossFileHunkNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      for (let index = 0; index < 19; index += 1) {
+        await session.press("]");
+        await session.waitIdle({ timeout: 40 });
+      }
+
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const mid = 4;"),
+        5_000,
+      );
+
+      await session.press("[");
+      await session.waitIdle({ timeout: 80 });
+      await session.press("[");
+      const backward = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line 341 changed") || text.includes("line 002 changed"),
+        5_000,
+      );
+
+      expect(backward).toContain("line 341 changed");
+      expect(backward).not.toContain("line 002 changed");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("PTY sessions can navigate forward and backward between distant hunks in one large file", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 104,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line1 = 100");
+      expect(initial).not.toContain("line60 = 6000");
+
+      await session.press("]");
+      const secondHunk = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line60 = 6000") && !text.includes("line1 = 100"),
+        5_000,
+      );
+
+      expect(secondHunk).toContain("line60 = 6000");
+      expect(secondHunk).not.toContain("line1 = 100");
+
+      await session.press("[");
+      const firstHunk = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line1 = 100") && !text.includes("line60 = 6000"),
+        5_000,
+      );
+
+      expect(firstHunk).toContain("line1 = 100");
+      expect(firstHunk).not.toContain("line60 = 6000");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a short last file does not trap upward scrolling at the bottom edge", async () => {
     const fixture = harness.createBottomClampedRepoFixture();
     const session = await harness.launchHunk({
@@ -670,6 +751,36 @@ describe("live UI integration", () => {
 
       expect(restored).toContain("before_01");
       expect(restored).not.toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("general pager mode can display the sidebar file tree", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
+
+      await session.press("s");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+      const withSidebar = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
+      expect(withSidebar).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(withSidebar).toMatch(sidebarRow);
     } finally {
       session.close();
     }

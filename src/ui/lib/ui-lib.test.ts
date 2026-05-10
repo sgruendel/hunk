@@ -137,7 +137,7 @@ describe("ui helpers", () => {
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
-      sidebarVisible: false,
+      renderSidebar: false,
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
       toggleHelp: () => {},

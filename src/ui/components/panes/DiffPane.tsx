@@ -37,6 +37,7 @@ import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
+import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
@@ -324,7 +325,10 @@ export function DiffPane({
       return;
     }
 
-    const updateViewport = () => {
+    let cancelled = false;
+    let scheduled = false;
+
+    const readViewport = () => {
       const nextTop = scrollBox.scrollTop ?? 0;
       const nextHeight = scrollBox.viewport.height ?? 0;
 
@@ -341,16 +345,39 @@ export function DiffPane({
       );
     };
 
+    // OpenTUI emits `change` synchronously from inside its own slider sync, and other
+    // useLayoutEffects in this pane scroll the box from inside React's commit phase.
+    // Calling setScrollViewport directly from the listener can run setState while React
+    // is already committing — which downstream layout effects can amplify into a render
+    // loop and trip React's max-update-depth guard. Coalesce listener events into a
+    // single microtask-deferred read so the setState is dispatched outside the emit
+    // call stack and repeated events between paints collapse into one update.
     const handleViewportChange = () => {
-      updateViewport();
+      if (scheduled) {
+        return;
+      }
+      scheduled = true;
+      queueMicrotask(() => {
+        if (cancelled) {
+          scheduled = false;
+          return;
+        }
+
+        try {
+          readViewport();
+        } finally {
+          scheduled = false;
+        }
+      });
     };
 
-    updateViewport();
+    readViewport();
     scrollBox.verticalScrollBar.on("change", handleViewportChange);
     scrollBox.viewport.on("layout-changed", handleViewportChange);
     scrollBox.viewport.on("resized", handleViewportChange);
 
     return () => {
+      cancelled = true;
       scrollBox.verticalScrollBar.off("change", handleViewportChange);
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
@@ -385,9 +412,9 @@ export function DiffPane({
   );
 
   const visibleViewportFileIds = useMemo(() => {
-    const overscanRows = 8;
-    const minVisibleY = Math.max(0, scrollViewport.top - overscanRows);
-    const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanRows;
+    const overscanTerminalRows = 8;
+    const minVisibleY = Math.max(0, scrollViewport.top - overscanTerminalRows);
+    const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanTerminalRows;
     return collectIntersectingFileSectionIds(baseFileSectionLayouts, minVisibleY, maxVisibleY);
   }, [baseFileSectionLayouts, scrollViewport.height, scrollViewport.top]);
 
@@ -415,11 +442,18 @@ export function DiffPane({
     return next;
   }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
 
+  // Measure with the *full* set of agent notes per file, not just the visible-viewport set.
+  // The visible set is correct for rendering (skip painting cards on off-screen files), but
+  // using it here makes total content height fluctuate with scroll position: as a file with
+  // notes leaves the viewport, its measurement shrinks back to the no-notes baseline, which
+  // shrinks `totalContentHeight`, which tightens `clampReviewScrollTop`'s ceiling, which
+  // snaps the viewport upward by the height of the off-top note rows. Always include notes
+  // in geometry for stable bottom-edge clamping.
   const sectionGeometry = useMemo(
     () =>
       files.map((file, index) => {
-        const visibleNotes = visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
-        if (visibleNotes.length === 0) {
+        const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
+        if (notes.length === 0) {
           return baseSectionGeometry[index]!;
         }
 
@@ -428,13 +462,14 @@ export function DiffPane({
           layout,
           showHunkHeaders,
           theme,
-          visibleNotes,
+          notes,
           diffContentWidth,
           showLineNumbers,
           wrapLines,
         );
       }),
     [
+      allAgentNotesByFile,
       baseSectionGeometry,
       diffContentWidth,
       files,
@@ -442,7 +477,6 @@ export function DiffPane({
       showHunkHeaders,
       showLineNumbers,
       theme,
-      visibleAgentNotesByFile,
       wrapLines,
     ],
   );
@@ -589,6 +623,56 @@ export function DiffPane({
 
     return next;
   }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
+  const visibleBodyBoundsByFile = useMemo(() => {
+    const next = new Map<string, VisibleBodyBounds>();
+    if (scrollViewport.height <= 0) {
+      return next;
+    }
+
+    const overscanTerminalRows = Math.max(24, scrollViewport.height * 2);
+
+    files.forEach((file, index) => {
+      const sectionLayout = fileSectionLayouts[index];
+      const geometry = sectionGeometry[index];
+      if (!sectionLayout || !geometry) {
+        return;
+      }
+
+      const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
+      if (!shouldRenderSection) {
+        return;
+      }
+
+      // Convert the absolute review-stream viewport into file-body-local coordinates.
+      // Example: if the viewport starts at row 2_000 globally and this file body starts at row
+      // 1_940, then the file-local visible top is 60 rows into this file.
+      const minTop = scrollViewport.top - sectionLayout.bodyTop - overscanTerminalRows;
+      const maxBottom =
+        scrollViewport.top + scrollViewport.height - sectionLayout.bodyTop + overscanTerminalRows;
+
+      // Keep the mounted rows bounded to the viewport slice. Selection reveal uses planned hunk
+      // geometry as its fallback, so mounting an offscreen selected hunk is not necessary and would
+      // remount very large hunks in full.
+
+      // Clamp the requested file-local interval back into the real body extent, then store it as
+      // { top, height } so the row slicer can rebuild the matching [top, bottom) window later.
+      const clampedTop = Math.min(geometry.bodyHeight, Math.max(0, minTop));
+      const clampedBottom = Math.min(geometry.bodyHeight, Math.max(clampedTop, maxBottom));
+      next.set(file.id, {
+        top: clampedTop,
+        height: clampedBottom - clampedTop,
+      });
+    });
+
+    return next;
+  }, [
+    fileSectionLayouts,
+    files,
+    scrollViewport.height,
+    scrollViewport.top,
+    sectionGeometry,
+    visibleWindowedFileIds,
+  ]);
 
   const selectedFileIndex = selectedFileId
     ? files.findIndex((file) => file.id === selectedFileId)
@@ -663,6 +747,10 @@ export function DiffPane({
   const selectedEstimatedHunkEndRowId = selectedEstimatedHunkBounds?.endRowId ?? null;
   const selectedNoteTop = selectedNoteBounds?.top ?? null;
   const selectedNoteHeight = selectedNoteBounds?.height ?? null;
+
+  /** The bodyTop of the currently selected file's section layout, used to floor hunk reveal scroll targets so they never cross above the owning file boundary. */
+  const selectedFileBodyTop =
+    selectedFileIndex >= 0 ? (fileSectionLayouts[selectedFileIndex]?.bodyTop ?? 0) : 0;
 
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
@@ -902,17 +990,16 @@ export function DiffPane({
       // hunk can request a top offset that is no longer reachable once the viewport hits EOF.
       // Using the reachable value keeps the reveal logic from fighting later manual scrolling.
       if (selectedNoteBounds) {
-        scrollBox.scrollTo(
-          clampReviewScrollTop(
-            computeHunkRevealScrollTop({
-              hunkTop: selectedNoteBounds.top,
-              hunkHeight: selectedNoteBounds.height,
-              preferredTopPadding,
-              viewportHeight,
-            }),
-            viewportHeight,
-          ),
-        );
+        const revealScrollTop = computeHunkRevealScrollTop({
+          hunkTop: selectedNoteBounds.top,
+          hunkHeight: selectedNoteBounds.height,
+          preferredTopPadding,
+          viewportHeight,
+        });
+        // Floor against the owning file's body boundary so the viewport never crosses above it
+        // and triggers a pinned-header flash.
+        const flooredScrollTop = Math.max(revealScrollTop, selectedFileBodyTop);
+        scrollBox.scrollTo(clampReviewScrollTop(flooredScrollTop, viewportHeight));
         return;
       }
 
@@ -938,17 +1025,16 @@ export function DiffPane({
           ? Math.max(0, renderedBottom - renderedTop)
           : selectedEstimatedHunkBounds.height;
 
-        scrollBox.scrollTo(
-          clampReviewScrollTop(
-            computeHunkRevealScrollTop({
-              hunkTop,
-              hunkHeight,
-              preferredTopPadding,
-              viewportHeight,
-            }),
-            viewportHeight,
-          ),
-        );
+        const revealScrollTop = computeHunkRevealScrollTop({
+          hunkTop,
+          hunkHeight,
+          preferredTopPadding,
+          viewportHeight,
+        });
+        // Floor against the owning file's body boundary so the viewport never crosses above it
+        // and triggers a pinned-header flash.
+        const flooredScrollTop = Math.max(revealScrollTop, selectedFileBodyTop);
+        scrollBox.scrollTo(clampReviewScrollTop(flooredScrollTop, viewportHeight));
         return;
       }
 
@@ -988,6 +1074,7 @@ export function DiffPane({
     selectedFileIndex,
     selectedHunkIndex,
     selectedHunkRevealRequestId,
+    selectedFileBodyTop,
     selectedNoteHeight,
     selectedNoteTop,
     suppressViewportSelectionSync,
@@ -1082,6 +1169,7 @@ export function DiffPane({
                       layout={layout}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
+                      sectionGeometry={sectionGeometry[index]}
                       separatorWidth={separatorWidth}
                       showHeader={shouldRenderInStreamFileHeader(index)}
                       showSeparator={index > 0}
@@ -1093,6 +1181,7 @@ export function DiffPane({
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
+                      visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onOpenAgentNotesAtHunk={(hunkIndex) =>
                         onOpenAgentNotesAtHunk(file.id, hunkIndex)
                       }

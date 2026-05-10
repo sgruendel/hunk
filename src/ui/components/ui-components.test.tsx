@@ -3,7 +3,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
-import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
@@ -263,7 +263,7 @@ async function waitForFrame(
 }
 
 function createBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
     changesetId: "changeset:ui",
     files: [
@@ -288,7 +288,7 @@ function createBootstrap(): AppBootstrap {
 }
 
 function createWrapBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:wrap",
     files: [
       createTestDiffFile(
@@ -856,6 +856,64 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
+    const theme = resolveTheme("midnight", null);
+    const firstFile = createTallDiffFile("first", "first.ts", 18);
+    firstFile.agent = {
+      path: firstFile.path,
+      summary: "first.ts note",
+      annotations: [
+        {
+          newRange: [2, 2],
+          summary: "Offscreen note should still reserve geometry at EOF.",
+          rationale:
+            "If measurement drops this note after first.ts leaves the viewport, max scroll shrinks.",
+        },
+      ],
+    };
+    const files = [firstFile, createTallDiffFile("last", "last.ts", 24)];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      selectedFileId: undefined,
+      separatorWidth: 84,
+      showAgentNotes: true,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 10,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      let bottomScrollTop = 0;
+      await act(async () => {
+        scrollRef.current?.scrollTo(1_000_000);
+        bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
+      });
+      expect(bottomScrollTop).toBeGreaterThan(0);
+
+      await settleDiffPane(setup);
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(bottomScrollTop + 1);
+      });
+      await settleDiffPane(setup);
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
@@ -994,6 +1052,34 @@ describe("UI components", () => {
       expect(frame).toContain("18   export const line18 = 18;");
       expect(frame).not.toContain("2 - export const line2 = 2;");
       expect(frame).not.toContain("2 + export const line2 = 200;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps a distant selected hunk visible when row windowing narrows one file body", async () => {
+    const theme = resolveTheme("midnight", null);
+    const props = createDiffPaneProps([createWideTwoHunkDiffFile("target", "target.ts")], theme, {
+      diffContentWidth: 96,
+      headerLabelWidth: 48,
+      selectedFileId: "target",
+      selectedHunkIndex: 1,
+      separatorWidth: 92,
+      width: 100,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 104,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("line60 = 5901"));
+
+      expect(frame).toContain("line60 = 5901");
+      expect(frame).not.toContain("line1 = 1001");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
