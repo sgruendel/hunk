@@ -9,11 +9,7 @@ import { createTwoFilesPatch } from "diff";
 import fs from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
-import {
-  createSkippedBinaryMetadata,
-  isProbablyBinaryFile,
-  patchLooksBinary,
-} from "./binary";
+import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import { HunkUserError } from "./errors";
 import {
@@ -122,11 +118,7 @@ export function stripGitLogMetadata(text: string) {
       // The header section ends at the first patch line. `diff --git `
       // is the canonical Git start; `--- `/`+++ ` cover unified-diff
       // input where someone synthesised log output without it.
-      if (
-        line.startsWith("diff --git ") ||
-        line.startsWith("--- ") ||
-        line.startsWith("+++ ")
-      ) {
+      if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
         inHeader = false;
         out.push(line);
       }
@@ -136,33 +128,6 @@ export function stripGitLogMetadata(text: string) {
   }
 
   return out.join("\n");
-}
-
-/**
- * Normalize Git's no-index `1/` and `2/` file prefixes into standard `a/` and `b/` headers.
- * Pierre's patch parser expects Git-style diff headers and otherwise fails to recover file names.
- */
-function normalizeGitNoIndexPrefixes(text: string) {
-  return text
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("diff --git 1/")) {
-        return line
-          .replace("diff --git 1/", "diff --git a/")
-          .replace(" 2/", " b/");
-      }
-
-      if (line.startsWith("--- 1/")) {
-        return line.replace("--- 1/", "--- a/");
-      }
-
-      if (line.startsWith("+++ 2/")) {
-        return line.replace("+++ 2/", "+++ b/");
-      }
-
-      return line;
-    })
-    .join("\n");
 }
 
 /** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */
@@ -189,11 +154,7 @@ function splitPatchIntoFileChunks(rawPatch: string) {
       continue;
     }
 
-    if (
-      !hasGitHeaders &&
-      line.startsWith("--- ") &&
-      lines[index + 1]?.startsWith("+++ ")
-    ) {
+    if (!hasGitHeaders && line.startsWith("--- ") && lines[index + 1]?.startsWith("+++ ")) {
       flush();
       current.push(line);
       current.push(lines[index + 1]!);
@@ -228,11 +189,7 @@ function countDiffStats(metadata: FileDiffMetadata) {
 }
 
 /** Recover the original patch chunk for one parsed file, preferring index order before path matching. */
-function findPatchChunk(
-  metadata: FileDiffMetadata,
-  chunks: string[],
-  index: number,
-) {
+function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: number) {
   const byIndex = chunks[index];
   if (byIndex) {
     return byIndex;
@@ -246,9 +203,7 @@ function findPatchChunk(
         .map(stripPrefixes)
         .some(
           (path) =>
-            chunk.includes(`a/${path}`) ||
-            chunk.includes(`b/${path}`) ||
-            chunk.includes(path),
+            chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path),
         ),
     ) ?? ""
   );
@@ -281,8 +236,7 @@ function buildDiffFile(
 ): DiffFile {
   const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
   const path = normalizedMetadata.name;
-  const resolvedPreviousPath =
-    normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
+  const resolvedPreviousPath = normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
 
   return {
     id: `${sourcePrefix}:${index}:${path}`,
@@ -298,315 +252,6 @@ function buildDiffFile(
     isTooLarge,
     statsTruncated,
   };
-}
-
-/**
- * Re-add Git's `a/` and `b/` path prefixes to patch headers when stdin came from a
- * `git diff` that was emitted with `diff.noprefix=true` (or otherwise stripped prefixes).
- *
- * `@pierre/diffs` requires `a/` and `b/` on `diff --git`, `---`, and `+++` lines and throws
- * a `TypeError` on the first noprefix header, which leaves the review with zero files. The
- * git-backed paths force `diff.noprefix=false` when they invoke git internally; this helper
- * covers the patch path (`hunk patch`, `hunk pager`) where the input was produced by an
- * outer `git` process we do not control.
- *
- * The rewrite is scoped to header lines only: once the `+++ ` line has been emitted for a
- * block we clear the flag so a deleted line whose content starts with `-- ` (e.g. a removed
- * SQL/Lua/Haskell comment, which becomes `--- foo` on disk) is not mistaken for a file
- * header inside the hunk body.
- */
-type GitHeaderRewriteMode = "add" | "strip";
-
-function normalizeGitPatchPrefixes(patchText: string) {
-  if (!patchText.includes("diff --git ")) {
-    return patchText;
-  }
-
-  const lines = patchText.split("\n");
-  const normalizedLines: string[] = [];
-  let blockLines: string[] = [];
-
-  const flushBlock = () => {
-    if (blockLines.length === 0) {
-      return;
-    }
-
-    for (const line of rewriteGitPatchBlock(blockLines)) {
-      normalizedLines.push(line);
-    }
-    blockLines = [];
-  };
-
-  for (const line of lines) {
-    if (line.startsWith("diff --git ")) {
-      flushBlock();
-      blockLines.push(line);
-      continue;
-    }
-
-    if (blockLines.length > 0) {
-      blockLines.push(line);
-    } else {
-      normalizedLines.push(line);
-    }
-  }
-
-  flushBlock();
-  return normalizedLines.join("\n");
-}
-
-/** Rewrite one `diff --git` block, keeping file-header rewrites out of hunk bodies. */
-function rewriteGitPatchBlock(blockLines: string[]) {
-  const firstLine = blockLines[0];
-  if (!firstLine?.startsWith("diff --git ")) {
-    return blockLines;
-  }
-
-  const result = rewriteGitDiffHeader(firstLine, blockLines);
-  let blockRewriteMode = result.rewriteMode;
-
-  const rewrittenLines = [result.line];
-
-  for (const line of blockLines.slice(1)) {
-    if (blockRewriteMode && line.startsWith("--- ")) {
-      rewrittenLines.push(
-        rewriteUnifiedFileLine(line, "--- ", "a/", blockRewriteMode),
-      );
-      continue;
-    }
-
-    if (blockRewriteMode && line.startsWith("+++ ")) {
-      const rewriteMode = blockRewriteMode;
-      blockRewriteMode = null;
-      rewrittenLines.push(
-        rewriteUnifiedFileLine(line, "+++ ", "b/", rewriteMode),
-      );
-      continue;
-    }
-
-    rewrittenLines.push(line);
-  }
-
-  return rewrittenLines;
-}
-
-/** Detect prefixed/noprefix `diff --git` lines and rewrite them into Pierre's `a/X b/Y` form. */
-function rewriteGitDiffHeader(
-  line: string,
-  blockLines: string[],
-): {
-  line: string;
-  rewriteMode: GitHeaderRewriteMode | null;
-} {
-  const rest = line.slice("diff --git ".length).trimEnd();
-
-  const quotedMatch = rest.match(/^"((?:\\.|[^"\\])*)" "((?:\\.|[^"\\])*)"$/);
-  if (quotedMatch) {
-    const [, oldPath = "", newPath = ""] = quotedMatch;
-    const pair = canonicalizeGitPathPair(oldPath, newPath, blockLines);
-    // Pierre's git header parser does not currently handle the quoted `"a/..." "b/..."`
-    // form, so canonicalize quoted paths to the unquoted form even when prefixes exist.
-    return {
-      line: `diff --git ${pair.oldPath} ${pair.newPath}`,
-      rewriteMode: pair.rewriteMode,
-    };
-  }
-
-  const tokens = rest.split(" ");
-
-  if (tokens.length >= 2 && tokens.length % 2 === 0) {
-    const half = tokens.length / 2;
-    const firstHalf = tokens.slice(0, half).join(" ");
-    const secondHalf = tokens.slice(half).join(" ");
-    const knownPair = canonicalizeKnownGitPathPair(
-      firstHalf,
-      secondHalf,
-      blockLines,
-    );
-
-    if (knownPair?.changed) {
-      return {
-        line: `diff --git ${knownPair.oldPath} ${knownPair.newPath}`,
-        rewriteMode: knownPair.rewriteMode,
-      };
-    }
-
-    // Already prefixed: `a/X b/Y` (covers single-token and equally split multi-token paths).
-    if (knownPair?.isCanonical) {
-      return { line, rewriteMode: null };
-    }
-
-    // Non-rename noprefix: identical halves regardless of whether the path contains spaces.
-    if (firstHalf === secondHalf && firstHalf.length > 0) {
-      return {
-        line: `diff --git a/${firstHalf} b/${secondHalf}`,
-        rewriteMode: "add",
-      };
-    }
-  }
-
-  // Two-token rename without prefix and without spaces in either path.
-  if (tokens.length === 2 && tokens[0] && tokens[1]) {
-    return {
-      line: `diff --git a/${tokens[0]} b/${tokens[1]}`,
-      rewriteMode: "add",
-    };
-  }
-
-  // Genuinely ambiguous (rename with spaces and no quoting). Leave untouched and let the
-  // parser surface the existing failure rather than guess at the path split.
-  return { line, rewriteMode: null };
-}
-
-const GIT_MNEMONIC_PREFIXES = new Set(["c", "i", "o", "w", "1", "2"]);
-
-/** Return one Git mnemonic side prefix from a path, if present. */
-function splitGitMnemonicPrefix(path: string) {
-  const [prefix, ...rest] = path.split("/");
-  if (!prefix || rest.length === 0 || !GIT_MNEMONIC_PREFIXES.has(prefix)) {
-    return null;
-  }
-
-  return { prefix, path: rest.join("/") };
-}
-
-/** Remove Git's outer quotes from one path-like metadata value. */
-function stripGitPathQuotes(path: string) {
-  return path.match(/^"((?:\\.|[^"\\])*)"$/)?.[1] ?? path;
-}
-
-/** Return rename metadata, which Git writes without mnemonic side prefixes. */
-function findRenameMetadata(blockLines: string[]) {
-  const oldPath = blockLines.find((line) => line.startsWith("rename from "));
-  const newPath = blockLines.find((line) => line.startsWith("rename to "));
-
-  if (!oldPath || !newPath) {
-    return null;
-  }
-
-  return {
-    oldPath: stripGitPathQuotes(oldPath.slice("rename from ".length)),
-    newPath: stripGitPathQuotes(newPath.slice("rename to ".length)),
-  };
-}
-
-/** Return a path with the expected Git side prefix while avoiding double-prefixing. */
-function withGitPrefix(path: string, prefix: "a/" | "b/") {
-  return path.startsWith(prefix) ? path : `${prefix}${path}`;
-}
-
-/** Decide whether a mnemonic-looking path pair is real mnemonic output or a noprefix rename. */
-function shouldStripMnemonicPair(
-  oldPath: string,
-  newPath: string,
-  blockLines: string[],
-) {
-  const oldMnemonic = splitGitMnemonicPrefix(oldPath);
-  const newMnemonic = splitGitMnemonicPrefix(newPath);
-
-  if (
-    !oldMnemonic ||
-    !newMnemonic ||
-    oldMnemonic.prefix === newMnemonic.prefix
-  ) {
-    return null;
-  }
-
-  const rename = findRenameMetadata(blockLines);
-  if (!rename) {
-    return true;
-  }
-
-  if (rename.oldPath === oldPath && rename.newPath === newPath) {
-    return false;
-  }
-
-  if (
-    rename.oldPath === oldMnemonic.path &&
-    rename.newPath === newMnemonic.path
-  ) {
-    return true;
-  }
-
-  return true;
-}
-
-/** Convert already-prefixed or mnemonic-prefixed path pairs into Pierre's canonical shape. */
-function canonicalizeKnownGitPathPair(
-  oldPath: string,
-  newPath: string,
-  blockLines: string[],
-) {
-  const oldMnemonic = splitGitMnemonicPrefix(oldPath);
-  const newMnemonic = splitGitMnemonicPrefix(newPath);
-  const isCanonical = oldPath.startsWith("a/") && newPath.startsWith("b/");
-
-  if (isCanonical) {
-    return {
-      oldPath,
-      newPath,
-      rewriteMode: "add" as const,
-      changed: false,
-      isCanonical: true,
-    };
-  }
-
-  if (
-    oldMnemonic &&
-    newMnemonic &&
-    shouldStripMnemonicPair(oldPath, newPath, blockLines)
-  ) {
-    return {
-      oldPath: `a/${oldMnemonic.path}`,
-      newPath: `b/${newMnemonic.path}`,
-      rewriteMode: "strip" as const,
-      changed: true,
-      isCanonical: false,
-    };
-  }
-
-  return null;
-}
-
-/** Convert one quoted `diff --git` path pair into Pierre's canonical side-prefix shape. */
-function canonicalizeGitPathPair(
-  oldPath: string,
-  newPath: string,
-  blockLines: string[],
-) {
-  return (
-    canonicalizeKnownGitPathPair(oldPath, newPath, blockLines) ?? {
-      oldPath: withGitPrefix(oldPath, "a/"),
-      newPath: withGitPrefix(newPath, "b/"),
-      rewriteMode: "add" as const,
-      changed: true,
-      isCanonical: false,
-    }
-  );
-}
-
-/** Insert the canonical `a/` or `b/` prefix on a unified-diff header that is missing it. */
-function rewriteUnifiedFileLine(
-  line: string,
-  marker: "--- " | "+++ ",
-  prefix: "a/" | "b/",
-  mode: GitHeaderRewriteMode,
-) {
-  const path = line.slice(marker.length);
-  const quotedPath = path.match(/^"((?:\\.|[^"\\])*)"(.*)$/);
-  const pathName = quotedPath?.[1] ?? path;
-  const suffix = quotedPath?.[2] ?? "";
-
-  if (pathName === "/dev/null" || pathName.startsWith("/dev/null\t")) {
-    return line;
-  }
-
-  const normalizedPath =
-    mode === "strip"
-      ? (splitGitMnemonicPrefix(pathName)?.path ?? pathName)
-      : pathName;
-
-  return `${marker}${withGitPrefix(normalizedPath, prefix)}${suffix}`;
 }
 
 /** Escape only the filename characters that break unified-diff header parsing. */
@@ -649,11 +294,7 @@ interface CountedLines {
 }
 
 /** Count text lines with a byte cap so huge skipped-file stats do not block startup. */
-function countLinesInFile(
-  path: string,
-  maxBytes: number,
-  size: number,
-): CountedLines {
+function countLinesInFile(path: string, maxBytes: number, size: number): CountedLines {
   let fd: number | undefined;
 
   try {
@@ -681,8 +322,7 @@ function countLinesInFile(
 
     return {
       complete: position >= size,
-      lines:
-        lastByte !== undefined && lastByte !== 0x0a ? lineCount + 1 : lineCount,
+      lines: lastByte !== undefined && lastByte !== 0x0a ? lineCount + 1 : lineCount,
     };
   } catch {
     return { complete: true, lines: 0 };
@@ -700,10 +340,7 @@ interface LargeUntrackedFileCheck {
 }
 
 /** Return whether an untracked file is too large to synthesize into a full in-memory patch. */
-function inspectLargeUntrackedFile(
-  repoRoot: string,
-  filePath: string,
-): LargeUntrackedFileCheck {
+function inspectLargeUntrackedFile(repoRoot: string, filePath: string): LargeUntrackedFileCheck {
   const absolutePath = join(repoRoot, filePath);
 
   let stat: fs.Stats;
@@ -714,13 +351,10 @@ function inspectLargeUntrackedFile(
   }
 
   const byteLimit =
-    stat.size > LARGE_DIFF_FILE_MAX_BYTES
-      ? LARGE_DIFF_FILE_MAX_BYTES
-      : LARGE_DIFF_FILE_SNIFF_BYTES;
+    stat.size > LARGE_DIFF_FILE_MAX_BYTES ? LARGE_DIFF_FILE_MAX_BYTES : LARGE_DIFF_FILE_SNIFF_BYTES;
   const counted = countLinesInFile(absolutePath, byteLimit, stat.size);
   const shouldSkip =
-    stat.size > LARGE_DIFF_FILE_MAX_BYTES ||
-    counted.lines > LARGE_DIFF_FILE_MAX_LINES;
+    stat.size > LARGE_DIFF_FILE_MAX_BYTES || counted.lines > LARGE_DIFF_FILE_MAX_LINES;
 
   return {
     shouldSkip,
@@ -781,9 +415,7 @@ function shouldSkipLargeTrackedDiff(file: GitNumstatFile, repoRoot: string) {
   }
 
   try {
-    return (
-      fs.statSync(join(repoRoot, file.path)).size > LARGE_DIFF_FILE_MAX_BYTES
-    );
+    return fs.statSync(join(repoRoot, file.path)).size > LARGE_DIFF_FILE_MAX_BYTES;
   } catch {
     return false;
   }
@@ -884,10 +516,7 @@ function buildUntrackedDiffFile(
 }
 
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
-export function orderDiffFiles(
-  files: DiffFile[],
-  agentContext: AgentContext | null,
-) {
+export function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
   if (!agentContext || agentContext.files.length === 0) {
     return files;
   }
@@ -910,10 +539,7 @@ export function orderDiffFiles(
       return {
         file,
         index,
-        rank:
-          rankCandidates.length > 0
-            ? Math.min(...rankCandidates)
-            : Number.POSITIVE_INFINITY,
+        rank: rankCandidates.length > 0 ? Math.min(...rankCandidates) : Number.POSITIVE_INFINITY,
       };
     })
     .sort((left, right) => {
@@ -933,9 +559,7 @@ function normalizePatchChangeset(
   sourceLabel: string,
   agentContext: AgentContext | null,
 ): Changeset {
-  const normalizedPatchText = stripTerminalControl(
-    patchText.replaceAll("\r\n", "\n"),
-  );
+  const normalizedPatchText = stripTerminalControl(patchText.replaceAll("\r\n", "\n"));
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
   try {
@@ -1008,10 +632,7 @@ function buildBinaryFileDiffChangeset(
     agentSummary: agentContext?.summary,
     files: [
       buildDiffFile(
-        createSkippedBinaryMetadata(
-          displayPath,
-          resolveBinaryComparisonType(leftPath, rightPath),
-        ),
+        createSkippedBinaryMetadata(displayPath, resolveBinaryComparisonType(leftPath, rightPath)),
         `Binary file skipped: ${basename(input.left)} ↔ ${basename(input.right)}\n`,
         0,
         displayPath,
@@ -1034,9 +655,7 @@ async function loadFileDiffChangeset(
   const leftPath = resolvePath(cwd, input.left);
   const rightPath = resolvePath(cwd, input.right);
   const displayPath =
-    input.kind === "difftool"
-      ? (input.path ?? basename(input.right))
-      : basename(input.right);
+    input.kind === "difftool" ? (input.path ?? basename(input.right)) : basename(input.right);
   const title =
     input.kind === "difftool"
       ? `git difftool: ${displayPath}`
@@ -1069,17 +688,9 @@ async function loadFileDiffChangeset(
   };
 
   const metadata = parseDiffFromFile(oldFile, newFile, { context: 3 }, true);
-  const patch = createTwoFilesPatch(
-    displayPath,
-    displayPath,
-    leftText,
-    rightText,
-    "",
-    "",
-    {
-      context: 3,
-    },
-  );
+  const patch = createTwoFilesPatch(displayPath, displayPath, leftText, rightText, "", "", {
+    context: 3,
+  });
 
   return {
     id: `pair:${displayPath}`,
@@ -1173,9 +784,7 @@ async function loadJjDiffChangeset(
 
   const repoRoot = resolveJjRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
-  const title = input.range
-    ? `${repoName} ${input.range}`
-    : `${repoName} working copy`;
+  const title = input.range ? `${repoName} ${input.range}` : `${repoName} working copy`;
 
   return normalizePatchChangeset(
     runJjText({ input, args: buildJjDiffArgs(input), cwd }),
