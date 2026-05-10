@@ -1,12 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAppBootstrap } from "./loaders";
@@ -31,8 +24,7 @@ function createTempDir(prefix: string) {
 
 /** Normalize Windows short/long temp path spellings before path equality assertions. */
 function normalizeComparablePath(path: string) {
-  const resolvedPath =
-    platform() === "win32" ? realpathSync.native(path) : path;
+  const resolvedPath = platform() === "win32" ? realpathSync.native(path) : path;
   return resolvedPath.replace(/\\/g, "/");
 }
 
@@ -154,10 +146,7 @@ describe("loadAppBootstrap", () => {
     const agent = join(dir, "agent.json");
 
     writeFileSync(left, "export const answer = 41;\n");
-    writeFileSync(
-      right,
-      "export const answer = 42;\nexport const bonus = true;\n",
-    );
+    writeFileSync(right, "export const answer = 42;\nexport const bonus = true;\n");
     writeFileSync(
       agent,
       JSON.stringify({
@@ -166,9 +155,7 @@ describe("loadAppBootstrap", () => {
         files: [
           {
             path: "after.ts",
-            annotations: [
-              { newRange: [2, 2], summary: "Introduces the bonus flag." },
-            ],
+            annotations: [{ newRange: [2, 2], summary: "Introduces the bonus flag." }],
           },
         ],
       }),
@@ -185,9 +172,7 @@ describe("loadAppBootstrap", () => {
     });
 
     expect(bootstrap.changeset.files).toHaveLength(1);
-    expect(bootstrap.changeset.agentSummary).toBe(
-      "Agent added the bonus export.",
-    );
+    expect(bootstrap.changeset.agentSummary).toBe("Agent added the bonus export.");
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
@@ -289,10 +274,7 @@ describe("loadAppBootstrap", () => {
     git(dir, "add", "example.ts");
     git(dir, "commit", "-m", "initial");
 
-    writeFileSync(
-      join(dir, "example.ts"),
-      "export const value = 2;\nexport const extra = true;\n",
-    );
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
@@ -334,10 +316,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "large.txt"), "original\n");
     git(dir, "add", "large.txt");
     git(dir, "commit", "-m", "initial");
-    writeFileSync(
-      join(dir, "large.txt"),
-      `${"x\n".repeat(100_000)}widest generated line\n`,
-    );
+    writeFileSync(join(dir, "large.txt"), `${"x\n".repeat(100_000)}widest generated line\n`);
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
@@ -361,10 +340,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "tracked.ts"), "export const value = 1;\n");
     git(dir, "add", "tracked.ts");
     git(dir, "commit", "-m", "initial");
-    writeFileSync(
-      join(dir, "large.txt"),
-      `${"x\n".repeat(100_000)}widest generated line\n`,
-    );
+    writeFileSync(join(dir, "large.txt"), `${"x\n".repeat(100_000)}widest generated line\n`);
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
@@ -448,9 +424,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto", excludeUntracked: true },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "example.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["example.ts"]);
   });
 
   test("includes untracked files when diff compares the working tree against one ref", async () => {
@@ -503,9 +477,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "tracked.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["tracked.ts"]);
   });
 
   test("excludes untracked files for revset diffs like HEAD^! that do not include the working tree", async () => {
@@ -529,9 +501,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "tracked.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["tracked.ts"]);
   });
 
   test("loads untracked files whose names need parser-safe diff headers", async () => {
@@ -542,15 +512,9 @@ describe("loadAppBootstrap", () => {
     git(dir, "commit", "-m", "initial");
 
     const portableFiles = ["space name.txt"];
-    const unixOnlyFiles = [
-      'quote"name.txt',
-      "tab\tname.txt",
-      "back\\slash.txt",
-    ];
+    const unixOnlyFiles = ['quote"name.txt', "tab\tname.txt", "back\\slash.txt"];
     const fixtureFiles =
-      platform() === "win32"
-        ? portableFiles
-        : [...portableFiles, ...unixOnlyFiles];
+      platform() === "win32" ? portableFiles : [...portableFiles, ...unixOnlyFiles];
     for (const file of fixtureFiles) {
       writeFileSync(join(dir, file), `${file}\n`);
     }
@@ -587,9 +551,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "untracked.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["untracked.ts"]);
     expect(bootstrap.changeset.files[0]?.patch).toContain("new file mode");
   });
 
@@ -633,9 +595,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toContain(
-      "new-root.ts",
-    );
+    expect(bootstrap.changeset.files.map((file) => file.path)).toContain("new-root.ts");
   });
 
   test("loads git working tree changes when diff.noprefix is enabled", async () => {
@@ -646,10 +606,7 @@ describe("loadAppBootstrap", () => {
     git(dir, "commit", "-m", "initial");
 
     git(dir, "config", "--local", "diff.noprefix", "true");
-    writeFileSync(
-      join(dir, "example.ts"),
-      "export const value = 2;\nexport const extra = true;\n",
-    );
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
@@ -672,10 +629,7 @@ describe("loadAppBootstrap", () => {
     git(dir, "commit", "-m", "initial");
 
     git(dir, "config", "--local", "diff.mnemonicPrefix", "true");
-    writeFileSync(
-      join(dir, "example.ts"),
-      "export const value = 2;\nexport const extra = true;\n",
-    );
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
@@ -717,9 +671,7 @@ describe("loadAppBootstrap", () => {
         staged: false,
         options: { mode: "auto" },
       }),
-    ).rejects.toThrow(
-      "`hunk diff HEAD~999` could not resolve Git revision or range `HEAD~999`.",
-    );
+    ).rejects.toThrow("`hunk diff HEAD~999` could not resolve Git revision or range `HEAD~999`.");
   });
 
   test("uses agent sidecar file order for the review stream", async () => {
@@ -765,10 +717,7 @@ describe("loadAppBootstrap", () => {
       },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "beta.ts",
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts", "alpha.ts"]);
   });
 
   test("loads staged-only git diffs from the full UI command path", async () => {
@@ -789,9 +738,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("loads staged-only git diffs when diff.noprefix is enabled", async () => {
@@ -813,9 +760,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("loads pathspec-limited git diffs from the full UI command path", async () => {
@@ -836,9 +781,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "beta.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
   });
 
   test("loads jj diff output for a configured revset", async () => {
@@ -860,10 +803,7 @@ describe("loadAppBootstrap", () => {
         options: { mode: "auto", vcs: "jj" },
       });
 
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-        "alpha.ts",
-        "beta.ts",
-      ]);
+      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
       expect(bootstrap.changeset.title).toStartWith("hunk-jj-revset-");
       expect(bootstrap.changeset.title).toEndWith(" @");
     });
@@ -887,9 +827,7 @@ describe("loadAppBootstrap", () => {
         options: { mode: "auto", vcs: "jj" },
       });
 
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-        "alpha.ts",
-      ]);
+      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
       expect(bootstrap.changeset.title).toStartWith("hunk-jj-show-");
       expect(bootstrap.changeset.title).toEndWith(" show @-");
     });
@@ -912,9 +850,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "beta.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
   });
 
   test("loads show output for the latest commit and an explicit ref", async () => {
@@ -943,12 +879,8 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(latest.changeset.files.map((file) => file.path)).toEqual([
-      "beta.ts",
-    ]);
-    expect(previous.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(latest.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
+    expect(previous.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("reports a friendly error when show cannot resolve a ref", async () => {
@@ -964,9 +896,7 @@ describe("loadAppBootstrap", () => {
         ref: "HEAD~999",
         options: { mode: "auto" },
       }),
-    ).rejects.toThrow(
-      "`hunk show HEAD~999` could not resolve Git ref `HEAD~999`.",
-    );
+    ).rejects.toThrow("`hunk show HEAD~999` could not resolve Git ref `HEAD~999`.");
   });
 
   test("loads show output limited by pathspec", async () => {
@@ -989,9 +919,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("loads show output when diff.noprefix is enabled", async () => {
@@ -1011,9 +939,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("loads stash show output as a full review changeset", async () => {
@@ -1031,9 +957,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
     expect(bootstrap.changeset.title).toContain("stash");
   });
 
@@ -1053,9 +977,7 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
-      "alpha.ts",
-    ]);
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("rejects stash show when configured for jj", async () => {
@@ -1081,9 +1003,7 @@ describe("loadAppBootstrap", () => {
         kind: "stash-show",
         options: { mode: "auto" },
       }),
-    ).rejects.toThrow(
-      "`hunk stash show` could not find a stash entry to show.",
-    );
+    ).rejects.toThrow("`hunk stash show` could not find a stash entry to show.");
   });
 
   test("reports a friendly error when a stash ref does not exist", async () => {
@@ -1102,9 +1022,7 @@ describe("loadAppBootstrap", () => {
         ref: "stash@{99}",
         options: { mode: "auto" },
       }),
-    ).rejects.toThrow(
-      "`hunk stash show stash@{99}` could not resolve stash entry `stash@{99}`.",
-    );
+    ).rejects.toThrow("`hunk stash show stash@{99}` could not resolve stash entry `stash@{99}`.");
   });
 
   test("strips parser-added line endings from rename-only paths", async () => {
@@ -1157,21 +1075,10 @@ describe("loadAppBootstrap", () => {
     const patch = join(dir, "input.patch");
 
     writeFileSync(before, "export const answer = 41;\n");
-    writeFileSync(
-      after,
-      "export const answer = 42;\nexport const added = true;\n",
-    );
+    writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
 
     const diffProc = Bun.spawnSync(
-      [
-        "git",
-        "diff",
-        "--no-index",
-        "--color=always",
-        "--",
-        "before.ts",
-        "after.ts",
-      ],
+      ["git", "diff", "--no-index", "--color=always", "--", "before.ts", "after.ts"],
       {
         cwd: dir,
         stdin: "ignore",
@@ -1211,10 +1118,7 @@ describe("loadAppBootstrap", () => {
     mkdirSync(beforeDir, { recursive: true });
     mkdirSync(afterDir, { recursive: true });
     writeFileSync(before, "export const answer = 41;\n");
-    writeFileSync(
-      after,
-      "export const answer = 42;\nexport const added = true;\n",
-    );
+    writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
 
     const diffProc = Bun.spawnSync(
       ["git", "diff", "--no-index", "--color=always", "--", before, after],
@@ -1274,14 +1178,7 @@ describe("loadAppBootstrap", () => {
     git(dir, "commit", "-m", "initial");
 
     writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
-    const patchText = git(
-      dir,
-      "-c",
-      "diff.mnemonicPrefix=true",
-      "diff",
-      "--",
-      "example.ts",
-    );
+    const patchText = git(dir, "-c", "diff.mnemonicPrefix=true", "diff", "--", "example.ts");
 
     expect(patchText).toContain("diff --git i/example.ts w/example.ts");
 
@@ -1310,13 +1207,7 @@ describe("loadAppBootstrap", () => {
     git(dir, "commit", "-m", "initial");
 
     git(dir, "mv", "old.ts", "new.ts");
-    const patchText = git(
-      dir,
-      "-c",
-      "diff.mnemonicPrefix=true",
-      "diff",
-      "--cached",
-    );
+    const patchText = git(dir, "-c", "diff.mnemonicPrefix=true", "diff", "--cached");
 
     expect(patchText).toContain("diff --git c/old.ts i/new.ts");
 
@@ -1332,9 +1223,7 @@ describe("loadAppBootstrap", () => {
       previousPath: "old.ts",
       metadata: { type: "rename-pure" },
     });
-    expect(bootstrap.changeset.files[0]?.patch).toContain(
-      "diff --git a/old.ts b/new.ts",
-    );
+    expect(bootstrap.changeset.files[0]?.patch).toContain("diff --git a/old.ts b/new.ts");
   });
 
   test("does not strip real directories that look like mnemonic prefixes in noprefix renames", async () => {
@@ -1363,9 +1252,7 @@ describe("loadAppBootstrap", () => {
       previousPath: "c/foo.ts",
       metadata: { type: "rename-pure" },
     });
-    expect(bootstrap.changeset.files[0]?.patch).toContain(
-      "diff --git a/c/foo.ts b/w/bar.ts",
-    );
+    expect(bootstrap.changeset.files[0]?.patch).toContain("diff --git a/c/foo.ts b/w/bar.ts");
   });
 
   test("loads noprefix rename patches by recovering the rename pair from the headers", async () => {
@@ -1446,9 +1333,7 @@ describe("loadAppBootstrap", () => {
     // not as `-- a/drop table users;` (the corruption produced when the rewriter is still
     // active inside the hunk body).
     expect(file.metadata.deletionLines).toContain("-- drop table users;\n");
-    expect(
-      file.metadata.deletionLines.some((line) => line.includes("a/")),
-    ).toBe(false);
+    expect(file.metadata.deletionLines.some((line) => line.includes("a/"))).toBe(false);
   });
 
   test("leaves correctly prefixed patches untouched even when paths sit inside an `a/` directory", async () => {

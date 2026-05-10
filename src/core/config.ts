@@ -84,9 +84,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Accept only the layout names Hunk already supports. */
 function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
-  return value === "auto" || value === "split" || value === "stack"
-    ? value
-    : undefined;
+  return value === "auto" || value === "split" || value === "stack" ? value : undefined;
 }
 
 /** Accept only the VCS backends Hunk can load directly. */
@@ -127,9 +125,7 @@ function normalizeCustomThemeBase(value: unknown) {
     typeof value !== "string" ||
     !BUILT_IN_THEME_IDS.includes(value as (typeof BUILT_IN_THEME_IDS)[number])
   ) {
-    throw new Error(
-      `Expected custom_theme.base to be one of: ${BUILT_IN_THEME_IDS.join(", ")}.`,
-    );
+    throw new Error(`Expected custom_theme.base to be one of: ${BUILT_IN_THEME_IDS.join(", ")}.`);
   }
 
   return value;
@@ -142,10 +138,7 @@ function readCustomSyntaxColors(
   const syntax: CustomSyntaxColorsConfig = {};
 
   for (const key of CUSTOM_SYNTAX_COLOR_KEYS) {
-    const value = normalizeThemeColor(
-      source[key],
-      `custom_theme.syntax.${key}`,
-    );
+    const value = normalizeThemeColor(source[key], `custom_theme.syntax.${key}`);
     if (value !== undefined) {
       syntax[key] = value;
     }
@@ -155,9 +148,7 @@ function readCustomSyntaxColors(
 }
 
 /** Read the optional config-defined custom theme palette from one TOML object level. */
-function readCustomTheme(
-  source: Record<string, unknown>,
-): CustomThemeConfig | undefined {
+function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | undefined {
   const customThemeSource = source.custom_theme;
   if (!isRecord(customThemeSource)) {
     return undefined;
@@ -177,10 +168,7 @@ function readCustomTheme(
   }
 
   for (const key of CUSTOM_THEME_COLOR_KEYS) {
-    const value = normalizeThemeColor(
-      customThemeSource[key],
-      `custom_theme.${key}`,
-    );
+    const value = normalizeThemeColor(customThemeSource[key], `custom_theme.${key}`);
     if (value !== undefined) {
       customTheme[key] = value;
     }
@@ -238,10 +226,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
 }
 
 /** Merge partial preference layers with right-hand overrides taking precedence. */
-function mergeOptions(
-  base: CommonOptions,
-  overrides: CommonOptions,
-): CommonOptions {
+function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOptions {
   return {
     ...base,
     mode: overrides.mode ?? base.mode,
@@ -259,10 +244,7 @@ function mergeOptions(
 }
 
 /** Apply one parsed config object, including command/pager sections, to the current invocation. */
-function resolveConfigLayer(
-  source: Record<string, unknown>,
-  input: CliInput,
-): CommonOptions {
+function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): CommonOptions {
   let resolved = readConfigPreferences(source);
 
   const commandSection = source[input.kind];
@@ -283,10 +265,7 @@ function findRepoRoot(cwd = process.cwd()) {
   let current = resolve(cwd);
 
   for (;;) {
-    if (
-      fs.existsSync(join(current, ".git")) ||
-      fs.existsSync(join(current, ".jj"))
-    ) {
+    if (fs.existsSync(join(current, ".git")) || fs.existsSync(join(current, ".jj"))) {
       return current;
     }
 
@@ -328,9 +307,7 @@ export function resolveConfiguredCliInput(
   { cwd = process.cwd(), env = process.env }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
   const repoRoot = findRepoRoot(cwd);
-  const repoConfigPath = repoRoot
-    ? join(repoRoot, ".hunk", "config.toml")
-    : undefined;
+  const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
   let resolvedCustomTheme: CustomThemeConfig | undefined;
 
@@ -352,26 +329,14 @@ export function resolveConfiguredCliInput(
 
   if (userConfigPath) {
     const userConfig = readTomlRecord(userConfigPath);
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(userConfig, input),
-    );
-    resolvedCustomTheme = mergeCustomTheme(
-      resolvedCustomTheme,
-      readCustomTheme(userConfig),
-    );
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(userConfig));
   }
 
   if (repoConfigPath) {
     const repoConfig = readTomlRecord(repoConfigPath);
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(repoConfig, input),
-    );
-    resolvedCustomTheme = mergeCustomTheme(
-      resolvedCustomTheme,
-      readCustomTheme(repoConfig),
-    );
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -383,19 +348,14 @@ export function resolveConfiguredCliInput(
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     vcs: resolvedOptions.vcs ?? "git",
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
-    lineNumbers:
-      resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
+    lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
-    hunkHeaders:
-      resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
-    agentNotes:
-      resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
+    agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
-    throw new Error(
-      'Expected a [custom_theme] table when config selects theme = "custom".',
-    );
+    throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
   }
 
   return {
