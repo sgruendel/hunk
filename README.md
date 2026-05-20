@@ -15,12 +15,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 <table>
  <tr>
    <td width="60%" align="center">
-     <img width="794" alt="image" src="https://github.com/user-attachments/assets/f6ffd9c4-67f5-483c-88f1-cbe88c19f52f" />
+    <img width="845" alt="image" src="https://github.com/user-attachments/assets/35605618-be3f-479e-b6e0-edb089910651" />
      <br />
      <sub>Split view with sidebar and inline AI notes</sub>
    </td>
    <td width="40%" align="center">
-     <img width="508" alt="image" src="https://github.com/user-attachments/assets/44c542a2-0a09-41cd-b264-fbd942e92f06" />
+     <img width="507"alt="image" src="https://github.com/user-attachments/assets/92eb8993-f044-436d-a038-8139da5ad8de" />
      <br />
      <sub>Stacked view and mouse-selectable menus</sub>
    </td>
@@ -122,6 +122,7 @@ Example:
 theme = "graphite"   # graphite, midnight, paper, ember, custom
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj
+watch = false
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false

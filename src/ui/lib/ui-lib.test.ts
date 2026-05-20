@@ -145,11 +145,13 @@ describe("ui helpers", () => {
       requestQuit: () => {},
       selectLayoutMode: () => {},
       selectThemeId: () => {},
+      copyDecorations: true,
       showAgentNotes: true,
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
       renderSidebar: false,
+      toggleCopyDecorations: () => {},
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
       toggleHelp: () => {},
@@ -157,6 +159,7 @@ describe("ui helpers", () => {
       toggleLineNumbers: () => {},
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
+      triggerEditSelectedFile: () => {},
       wrapLines: true,
     });
 
@@ -164,7 +167,13 @@ describe("ui helpers", () => {
       menus.file
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Toggle files/filter focus", "Focus filter", "Reload", "Quit"]);
+    ).toEqual([
+      "Toggle files/filter focus",
+      "Focus filter",
+      "Open file in editor",
+      "Reload",
+      "Quit",
+    ]);
     expect(menus.file[0]).toMatchObject({
       kind: "item",
       label: "Toggle files/filter focus",
@@ -177,7 +186,7 @@ describe("ui helpers", () => {
             entry.kind === "item" && Boolean(entry.checked),
         )
         .map((entry) => entry.label),
-    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping"]);
+    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping", "Copy decorations"]);
     expect(
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")

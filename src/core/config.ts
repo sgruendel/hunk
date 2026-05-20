@@ -1,6 +1,7 @@
 import fs from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { resolveGlobalConfigPath } from "./paths";
+import { detectVcs, findVcsRepoRootCandidate, isVcsId } from "./vcs";
 import type {
   CliInput,
   CommonOptions,
@@ -64,6 +65,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   wrapLines: false,
   showHunkHeaders: true,
   showAgentNotes: false,
+  copyDecorations: false,
 };
 
 interface ConfigResolutionOptions {
@@ -89,7 +91,7 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
 
 /** Accept only the VCS backends Hunk can load directly. */
 function normalizeVcsMode(value: unknown): VcsMode | undefined {
-  return value === "git" || value === "jj" ? value : undefined;
+  return isVcsId(value) ? value : undefined;
 }
 
 /** Accept only plain booleans from config files. */
@@ -217,11 +219,13 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     mode: normalizeLayoutMode(source.mode),
     vcs: normalizeVcsMode(source.vcs),
     theme: normalizeString(source.theme),
+    watch: normalizeBoolean(source.watch),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
     wrapLines: normalizeBoolean(source.wrap_lines),
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     agentNotes: normalizeBoolean(source.agent_notes),
+    copyDecorations: normalizeBoolean(source.copy_decorations),
   };
 }
 
@@ -240,6 +244,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
   };
 }
 
@@ -260,31 +265,9 @@ function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): C
   return resolved;
 }
 
-/** Return the first parent that looks like a repository root. */
-function findRepoRoot(cwd = process.cwd()) {
-  let current = resolve(cwd);
-
-  for (;;) {
-    if (fs.existsSync(join(current, ".git")) || fs.existsSync(join(current, ".jj"))) {
-      return current;
-    }
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return undefined;
-    }
-
-    current = parent;
-  }
-}
-
 /** Choose the VCS backend that best matches the discovered checkout. */
-function detectRepoVcsMode(repoRoot?: string): VcsMode {
-  if (repoRoot && fs.existsSync(join(repoRoot, ".jj"))) {
-    return "jj";
-  }
-
-  return "git";
+function detectRepoVcsMode(cwd: string): VcsMode {
+  return detectVcs(cwd)?.id ?? "git";
 }
 
 /** Parse one TOML config file into a plain object. */
@@ -306,14 +289,14 @@ export function resolveConfiguredCliInput(
   input: CliInput,
   { cwd = process.cwd(), env = process.env }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
-  const repoRoot = findRepoRoot(cwd);
+  const repoRoot = findVcsRepoRootCandidate(cwd);
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
   let resolvedCustomTheme: CustomThemeConfig | undefined;
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
-    vcs: detectRepoVcsMode(repoRoot),
+    vcs: detectRepoVcsMode(cwd),
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
     theme: "graphite",
@@ -325,6 +308,7 @@ export function resolveConfiguredCliInput(
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
   };
 
   if (userConfigPath) {
@@ -344,7 +328,7 @@ export function resolveConfiguredCliInput(
     ...resolvedOptions,
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
-    watch: input.options.watch ?? false,
+    watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     vcs: resolvedOptions.vcs ?? "git",
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
@@ -352,6 +336,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {

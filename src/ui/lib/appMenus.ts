@@ -15,11 +15,13 @@ export interface BuildAppMenusOptions {
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   selectThemeId: (themeId: string) => void;
+  copyDecorations: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   renderSidebar: boolean;
+  toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
@@ -27,6 +29,7 @@ export interface BuildAppMenusOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   wrapLines: boolean;
 }
 
@@ -44,11 +47,13 @@ export function buildAppMenus({
   requestQuit,
   selectLayoutMode,
   selectThemeId,
+  copyDecorations,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
   renderSidebar,
+  toggleCopyDecorations,
   toggleAgentNotes,
   toggleFocusArea,
   toggleHelp,
@@ -56,6 +61,7 @@ export function buildAppMenus({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const themeMenuEntries: MenuEntry[] = availableThemes.map((theme) => ({
@@ -77,6 +83,12 @@ export function buildAppMenus({
       label: "Focus filter",
       hint: "/",
       action: focusFilter,
+    },
+    {
+      kind: "item",
+      label: "Open file in editor",
+      hint: "e",
+      action: triggerEditSelectedFile,
     },
   ];
 
@@ -159,6 +171,12 @@ export function buildAppMenus({
         hint: "m",
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
+      },
+      {
+        kind: "item",
+        label: "Copy decorations",
+        checked: copyDecorations,
+        action: toggleCopyDecorations,
       },
     ],
     navigate: [
